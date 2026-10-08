@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% set analysis_id = analysis.id %}
+{% block title %}DNS – {{ analysis.filename }}{% endblock %}
+{% block page_title %}DNS Analysis{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-wrapper" data-id="{{ analysis.id }}">
+
+  <!-- DNS summary cards -->
+  <div class="cards-grid" id="dnsSummaryCards"></div>
+
+  <!-- Anomalies -->
+  <div class="card" id="dnsAnomalyCard">
+    <h2 class="card-title">⚠ DNS Anomalies</h2>
+    <div id="dnsAnomalies"><p class="muted">Loading…</p></div>
+  </div>
+
+  <div class="row-2col">
+    <!-- Top domains chart + table -->
+    <div class="card">
+      <h2 class="card-title">🌐 Top Queried Domains</h2>
+      <div class="chart-wrap"><canvas id="dnsDomainsChart"></canvas></div>
+      <table class="data-table" style="margin-top:1rem">
+        <thead><tr><th>Domain</th><th>Queries</th></tr></thead>
+        <tbody id="topDomainsBody"></tbody>
+      </table>
+    </div>
+    <!-- Query types + top clients -->
+    <div class="card">
+      <h2 class="card-title">🔣 Query Types</h2>
+      <div class="chart-wrap"><canvas id="dnsTypesChart"></canvas></div>
+      <h2 class="card-title" style="margin-top:1.5rem">👤 Top DNS Clients</h2>
+      <table class="data-table">
+        <thead><tr><th>IP</th><th>Queries</th></tr></thead>
+        <tbody id="topClientsBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- DNS query log -->
+  <div class="card">
+    <h2 class="card-title">📋 DNS Query Log</h2>
+    <div class="filter-row">
+      <input class="filter-input" id="fDomain"  placeholder="Domain"/>
+      <input class="filter-input" id="fSrcIp"   placeholder="Source IP"/>
+      <input class="filter-input" id="fQtype"   placeholder="Type (A, AAAA…)"/>
+      <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+      <button class="btn btn-outline"  onclick="resetFilters()">Reset</button>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead><tr><th>Domain</th><th>Type</th><th>Src IP</th><th>Server</th><th>RCode</th><th>Response</th></tr></thead>
+        <tbody id="dnsQueryBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<script>
+const AID = document.querySelector('.page-wrapper').dataset.id;
+let currentPage=1, perPage=100;
+let dnsDomainsChartInst, dnsTypesChartInst;
+
+async function loadDns(){
+  const params = buildParams();
+  const r = await fetch(`/api/dns/${AID}?per_page=500&${params}`);
+  const d = await r.json();
+
+  // Summary cards
+  document.getElementById('dnsSummaryCards').innerHTML = `
+    <div class="stat-card"><div class="stat-icon">🌐</div><div class="stat-val">${d.total_queries}</div><div class="stat-label">Total Queries</div></div>
+    <div class="stat-card"><div class="stat-icon">📝</div><div class="stat-val">${d.top_domains.length}</div><div class="stat-label">Unique Domains</div></div>
+    <div class="stat-card"><div class="stat-icon">⚠</div><div class="stat-val">${d.anomalies.length}</div><div class="stat-label">Anomalies</div></div>
+  `;
+
+  // Anomalies
+  const aEl = document.getElementById('dnsAnomalies');
+  if(!d.anomalies.length){ aEl.innerHTML='<p class="muted">No DNS anomalies detected.</p>'; }
+  else {
+    aEl.innerHTML = d.anomalies.map(a=>`
+      <div class="alert-finding sev-${a.severity.toLowerCase()}">
+        <div class="finding-header"><span class="sev-badge">${a.severity}</span> ${a.type}</div>
+        <div class="finding-desc">${a.description}</div>
+        <div class="finding-note">${a.note||''}</div>
+      </div>
+    `).join('');
+  }
+
+  // Top domains table + chart
+  const domLabels = d.top_domains.slice(0,10).map(x=>x.domain);
+  const domValues = d.top_domains.slice(0,10).map(x=>x.count);
+  document.getElementById('topDomainsBody').innerHTML = d.top_domains.slice(0,20).map(x=>`
+    <tr><td>${x.domain}</td><td>${x.count}</td></tr>
+  `).join('');
+  renderBarChart('dnsDomainsChart', domLabels, domValues, 'Queries', dnsDomainsChartInst);
+
+  // Types chart
+  const typeLabels = Object.keys(d.query_types);
+  const typeValues = Object.values(d.query_types);
+  renderDoughnut('dnsTypesChart', typeLabels, typeValues, dnsTypesChartInst);
+
+  // Top clients
+  document.getElementById('topClientsBody').innerHTML = d.top_clients.map(x=>`
+    <tr><td>${x.ip}</td><td>${x.count}</td></tr>
+  `).join('');
+
+  // Query log
+  const queries = d.queries.data || [];
+  document.getElementById('dnsQueryBody').innerHTML = queries.map(q=>`
+    <tr>
+      <td>${q.name||''}</td><td>${q.type||''}</td><td>${q.src_ip||''}</td>
+      <td>${q.dst_ip||''}</td>
+      <td><span class="rcode rcode-${q.rcode}">${q.rcode||''}</span></td>
+      <td>${(q.response||[]).join(', ')}</td>
+    </tr>
+  `).join('');
+  renderPagination('pagination', d.queries.total, d.queries.page, d.queries.per_page,
+    p=>{currentPage=p; loadDns();});
+}
+
+function buildParams(){
+  const p=new URLSearchParams();
+  const v=id=>document.getElementById(id).value.trim();
+  if(v('fDomain')) p.set('domain',v('fDomain'));
+  if(v('fSrcIp'))  p.set('src_ip',v('fSrcIp'));
+  if(v('fQtype'))  p.set('type',v('fQtype'));
+  p.set('page',currentPage); p.set('per_page',perPage);
+  return p.toString();
+}
+function applyFilters(){ currentPage=1; loadDns(); }
+function resetFilters(){
+  ['fDomain','fSrcIp','fQtype'].forEach(id=>document.getElementById(id).value='');
+  currentPage=1; loadDns();
+}
+
+function renderBarChart(canvasId, labels, data, label, existing){
+  const ctx=document.getElementById(canvasId).getContext('2d');
+  if(existing) existing.destroy();
+  return new Chart(ctx,{type:'bar',data:{labels,datasets:[{label,data,backgroundColor:'rgba(56,189,248,0.7)',borderColor:'#38bdf8',borderWidth:1}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#94a3b8'}},y:{ticks:{color:'#94a3b8'}}}}});
+}
+function renderDoughnut(canvasId, labels, data, existing){
+  const ctx=document.getElementById(canvasId).getContext('2d');
+  if(existing) existing.destroy();
+  const colors=['#38bdf8','#818cf8','#34d399','#fb923c','#f472b6','#facc15','#a78bfa','#60a5fa'];
+  return new Chart(ctx,{type:'doughnut',data:{labels,datasets:[{data,backgroundColor:colors}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{color:'#e2e8f0'}}}}});
+}
+function renderPagination(elId,total,page,per,cb){
+  const pages=Math.ceil(total/per);
+  const el=document.getElementById(elId);
+  if(pages<=1){el.innerHTML='';return;}
+  let html='';
+  if(page>1) html+=`<button onclick="(${cb})(${page-1})">‹</button>`;
+  for(let p=Math.max(1,page-2);p<=Math.min(pages,page+2);p++)
+    html+=`<button class="${p===page?'active':''}" onclick="(${cb})(${p})">${p}</button>`;
+  if(page<pages) html+=`<button onclick="(${cb})(${page+1})">›</button>`;
+  el.innerHTML=html;
+}
+
+loadDns();
+</script>
+{% endblock %}

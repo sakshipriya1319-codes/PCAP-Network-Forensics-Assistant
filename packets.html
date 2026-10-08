@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% set analysis_id = analysis.id %}
+{% block title %}Packets – {{ analysis.filename }}{% endblock %}
+{% block page_title %}Packet Browser{% endblock %}
+
+{% block content %}
+<div class="page-wrapper" data-id="{{ analysis.id }}">
+
+  <!-- Filters -->
+  <div class="card filter-card">
+    <h2 class="card-title">🔍 Search &amp; Filter Packets</h2>
+    <div class="filter-row">
+      <input class="filter-input" id="fSearch"   placeholder="Global search (IP, protocol, DNS query…)"/>
+      <input class="filter-input" id="fSrcIp"    placeholder="Source IP"/>
+      <input class="filter-input" id="fDstIp"    placeholder="Dest IP"/>
+      <input class="filter-input" id="fSrcPort"  placeholder="Src Port"/>
+      <input class="filter-input" id="fDstPort"  placeholder="Dst Port"/>
+      <input class="filter-input" id="fProto"    placeholder="Protocol"/>
+      <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+      <button class="btn btn-outline" onclick="resetFilters()">Reset</button>
+    </div>
+  </div>
+
+  <!-- Packet table -->
+  <div class="card">
+    <div class="table-header">
+      <h2 class="card-title">📦 Packets</h2>
+      <span id="packetCount" class="muted"></span>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table" id="packetTable">
+        <thead>
+          <tr>
+            <th>#</th><th>Time</th><th>Src IP</th><th>Src Port</th>
+            <th>Dst IP</th><th>Dst Port</th><th>Proto</th><th>Len</th><th>Info</th>
+          </tr>
+        </thead>
+        <tbody id="packetBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+
+  <!-- Packet detail panel -->
+  <div class="card hidden" id="detailPanel">
+    <h2 class="card-title">🔎 Packet Detail</h2>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/packets.js') }}"></script>
+{% endblock %}

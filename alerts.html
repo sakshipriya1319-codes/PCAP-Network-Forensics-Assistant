@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% set analysis_id = analysis.id %}
+{% block title %}Alerts – {{ analysis.filename }}{% endblock %}
+{% block page_title %}Suspicious Activity Alerts{% endblock %}
+
+{% block content %}
+<div class="page-wrapper" data-id="{{ analysis.id }}">
+
+  <div class="alert-box info">
+    <strong>⚠ Important:</strong> All findings below are <em>indicators</em> that require analyst verification.
+    This tool does not make definitive malice verdicts. Each finding represents an anomalous pattern
+    that <em>may</em> warrant investigation.
+  </div>
+
+  <!-- Severity summary -->
+  <div class="cards-grid" id="alertSummaryCards"></div>
+
+  <!-- Filters -->
+  <div class="card filter-card">
+    <h2 class="card-title">🔍 Filter Alerts</h2>
+    <div class="filter-row">
+      <select class="filter-input" id="fSeverity">
+        <option value="">All Severities</option>
+        <option value="HIGH">HIGH</option>
+        <option value="MEDIUM">MEDIUM</option>
+        <option value="LOW">LOW</option>
+      </select>
+      <input class="filter-input" id="fRule"  placeholder="Rule name"/>
+      <input class="filter-input" id="fSrcIp" placeholder="Source IP"/>
+      <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+      <button class="btn btn-outline" onclick="resetFilters()">Reset</button>
+    </div>
+  </div>
+
+  <!-- Alert cards -->
+  <div id="alertList"></div>
+  <div class="pagination" id="pagination"></div>
+</div>
+
+<script>
+const AID = document.querySelector('.page-wrapper').dataset.id;
+let currentPage=1, perPage=50;
+let lastData = null;
+
+async function loadAlerts(){
+  const params=buildParams();
+  const r = await fetch(`/api/alerts/${AID}?per_page=${perPage}&page=${currentPage}&${params}`);
+  const d = await r.json();
+  lastData = d;
+
+  // Summary cards
+  document.getElementById('alertSummaryCards').innerHTML = `
+    <div class="stat-card red">
+      <div class="stat-icon">🔴</div><div class="stat-val">${d.counts.HIGH}</div>
+      <div class="stat-label">HIGH</div>
+    </div>
+    <div class="stat-card orange">
+      <div class="stat-icon">🟠</div><div class="stat-val">${d.counts.MEDIUM}</div>
+      <div class="stat-label">MEDIUM</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-icon">🟡</div><div class="stat-val">${d.counts.LOW}</div>
+      <div class="stat-label">LOW</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon">📋</div><div class="stat-val">${d.alerts.total}</div>
+      <div class="stat-label">Total (filtered)</div>
+    </div>
+  `;
+
+  const alerts = d.alerts.data || [];
+  if(!alerts.length){
+    document.getElementById('alertList').innerHTML='<div class="card"><p class="muted">No alerts match the current filters.</p></div>';
+    document.getElementById('pagination').innerHTML='';
+    return;
+  }
+
+  document.getElementById('alertList').innerHTML = alerts.map(a=>`
+    <div class="alert-finding sev-${a.severity.toLowerCase()}">
+      <div class="finding-header">
+        <span class="sev-badge sev-${a.severity.toLowerCase()}">${a.severity}</span>
+        <span class="finding-rule">${a.rule||''}</span>
+        <span class="finding-confidence">confidence: ${a.confidence||'?'}</span>
+      </div>
+      <div class="finding-desc">${a.description||''}</div>
+      <div class="finding-meta">
+        ${a.src_ip?`<span>Src: <strong>${a.src_ip}</strong></span>`:''}
+        ${a.dst_ip?`<span>Dst: <strong>${a.dst_ip}</strong></span>`:''}
+        ${a.port?`<span>Port: <strong>${a.port}</strong></span>`:''}
+        ${a.protocol?`<span>Proto: <strong>${a.protocol}</strong></span>`:''}
+      </div>
+      <div class="finding-rec">💡 ${a.recommendation||''}</div>
+      <div class="finding-note">📎 ${a.note||''}</div>
+    </div>
+  `).join('');
+
+  renderPagination('pagination', d.alerts.total, d.alerts.page, d.alerts.per_page,
+    p=>{currentPage=p; loadAlerts();});
+}
+
+function buildParams(){
+  const p=new URLSearchParams();
+  const v=id=>document.getElementById(id).value.trim();
+  if(v('fSeverity')) p.set('severity',v('fSeverity'));
+  if(v('fRule'))     p.set('rule',v('fRule'));
+  if(v('fSrcIp'))    p.set('src_ip',v('fSrcIp'));
+  return p.toString();
+}
+function applyFilters(){ currentPage=1; loadAlerts(); }
+function resetFilters(){
+  ['fSeverity','fRule','fSrcIp'].forEach(id=>document.getElementById(id).value='');
+  currentPage=1; loadAlerts();
+}
+function renderPagination(elId,total,page,per,cb){
+  const pages=Math.ceil(total/per);
+  const el=document.getElementById(elId);
+  if(pages<=1){el.innerHTML='';return;}
+  let html='';
+  if(page>1) html+=`<button onclick="(${cb})(${page-1})">‹</button>`;
+  for(let p=Math.max(1,page-2);p<=Math.min(pages,page+2);p++)
+    html+=`<button class="${p===page?'active':''}" onclick="(${cb})(${p})">${p}</button>`;
+  if(page<pages) html+=`<button onclick="(${cb})(${page+1})">›</button>`;
+  el.innerHTML=html;
+}
+
+loadAlerts();
+</script>
+{% endblock %}

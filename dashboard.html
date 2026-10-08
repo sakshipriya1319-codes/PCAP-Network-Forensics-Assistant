@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% set analysis_id = analysis.id %}
+{% block title %}Dashboard – {{ analysis.filename }}{% endblock %}
+{% block page_title %}Analysis Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-wrapper" data-id="{{ analysis.id }}">
+
+  <!-- Status banner if not complete -->
+  {% if analysis.status != 'complete' %}
+  <div class="alert-box warning" id="statusBanner">
+    Analysis status: <strong>{{ analysis.status }}</strong>
+    {% if analysis.status == 'error' %} – {{ analysis.error }}{% endif %}
+    {% if analysis.status in ['pending','running'] %} – <span id="pollMsg">Refreshing…</span>{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- ── Summary Cards ──────────────────────────────────────────────────── -->
+  <div class="cards-grid" id="summaryCards">
+    <div class="stat-card"><div class="stat-icon">📦</div><div class="stat-val" id="sc-packets">–</div><div class="stat-label">Total Packets</div></div>
+    <div class="stat-card"><div class="stat-icon">💾</div><div class="stat-val" id="sc-bytes">–</div><div class="stat-label">Total Bytes</div></div>
+    <div class="stat-card"><div class="stat-icon">🔗</div><div class="stat-val" id="sc-convs">–</div><div class="stat-label">Conversations</div></div>
+    <div class="stat-card"><div class="stat-icon">🖥</div><div class="stat-val" id="sc-hosts">–</div><div class="stat-label">Unique Hosts</div></div>
+    <div class="stat-card"><div class="stat-icon">🌐</div><div class="stat-val" id="sc-dns">–</div><div class="stat-label">DNS Queries</div></div>
+    <div class="stat-card red"><div class="stat-icon">🚨</div><div class="stat-val" id="sc-alerts">–</div><div class="stat-label">Alerts</div></div>
+  </div>
+
+  <!-- ── Capture info ───────────────────────────────────────────────────── -->
+  <div class="row-2col">
+    <div class="card">
+      <h2 class="card-title">📁 Capture Information</h2>
+      <table class="info-table" id="captureTable"><tbody></tbody></table>
+    </div>
+
+    <!-- ── Protocol chart ─────────────────────────────────────────────── -->
+    <div class="card">
+      <h2 class="card-title">📡 Protocol Distribution</h2>
+      <div class="chart-wrap"><canvas id="protoChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Traffic over time ──────────────────────────────────────────────── -->
+  <div class="card">
+    <h2 class="card-title">📈 Traffic Over Time</h2>
+    <div class="chart-wrap-wide"><canvas id="trafficChart"></canvas></div>
+  </div>
+
+  <!-- ── Top talkers ───────────────────────────────────────────────────── -->
+  <div class="row-2col">
+    <div class="card">
+      <h2 class="card-title">📤 Top Source IPs</h2>
+      <table class="data-table">
+        <thead><tr><th>IP</th><th>Packets</th><th>Bytes</th></tr></thead>
+        <tbody id="topSrcBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-title">📥 Top Destination IPs</h2>
+      <table class="data-table">
+        <thead><tr><th>IP</th><th>Packets</th><th>Bytes</th></tr></thead>
+        <tbody id="topDstBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── DNS summary ────────────────────────────────────────────────────── -->
+  <div class="row-2col">
+    <div class="card">
+      <h2 class="card-title">🌐 Top DNS Domains</h2>
+      <table class="data-table">
+        <thead><tr><th>Domain</th><th>Queries</th></tr></thead>
+        <tbody id="topDnsBody"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2 class="card-title">🚨 Recent Alerts</h2>
+      <div id="recentAlerts"></div>
+      <a href="/alerts/{{ analysis.id }}" class="btn btn-sm btn-outline" style="margin-top:.5rem">View All Alerts →</a>
+    </div>
+  </div>
+
+  <!-- ── Export ─────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <h2 class="card-title">📥 Export Report</h2>
+    <div class="export-buttons">
+      <a href="/api/export/json/{{ analysis.id }}" class="btn btn-outline">JSON Report</a>
+      <a href="/api/export/csv/{{ analysis.id }}"  class="btn btn-outline">CSV Alerts</a>
+      <a href="/api/export/html/{{ analysis.id }}" class="btn btn-outline">HTML Report</a>
+    </div>
+  </div>
+
+</div>
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

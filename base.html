@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}PCAP Forensics Assistant{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<!-- ══ Sidebar ══════════════════════════════════════════════════════════════ -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-brand">
+    <span class="brand-icon">⚡</span>
+    <span class="brand-text">PCAP Forensics</span>
+  </div>
+  <div class="sidebar-subtitle">Analyze · Investigate · Understand</div>
+
+  <ul class="nav-links" id="navLinks">
+    <li><a href="{{ url_for('dashboard.index') }}" class="nav-link {% if request.endpoint == 'dashboard.index' %}active{% endif %}">
+      <span class="nav-icon">🏠</span><span>Dashboard</span></a></li>
+    <li><a href="{{ url_for('upload.upload_page') }}" class="nav-link {% if request.endpoint == 'upload.upload_page' %}active{% endif %}">
+      <span class="nav-icon">📤</span><span>Upload PCAP</span></a></li>
+
+    {% if analysis_id is defined and analysis_id %}
+    <li class="nav-section">Current Analysis</li>
+    <li><a href="{{ url_for('dashboard.dashboard', analysis_id=analysis_id) }}" class="nav-link {% if request.endpoint == 'dashboard.dashboard' %}active{% endif %}">
+      <span class="nav-icon">📊</span><span>Overview</span></a></li>
+    <li><a href="{{ url_for('dashboard.packets', analysis_id=analysis_id) }}" class="nav-link {% if request.endpoint == 'dashboard.packets' %}active{% endif %}">
+      <span class="nav-icon">📦</span><span>Packets</span></a></li>
+    <li><a href="{{ url_for('dashboard.conversations', analysis_id=analysis_id) }}" class="nav-link {% if request.endpoint == 'dashboard.conversations' %}active{% endif %}">
+      <span class="nav-icon">🔗</span><span>Conversations</span></a></li>
+    <li><a href="{{ url_for('dashboard.dns', analysis_id=analysis_id) }}" class="nav-link {% if request.endpoint == 'dashboard.dns' %}active{% endif %}">
+      <span class="nav-icon">🌐</span><span>DNS Analysis</span></a></li>
+    <li><a href="{{ url_for('dashboard.alerts', analysis_id=analysis_id) }}" class="nav-link {% if request.endpoint == 'dashboard.alerts' %}active{% endif %}">
+      <span class="nav-icon">🚨</span><span>Alerts</span></a></li>
+    {% endif %}
+  </ul>
+
+  <div class="sidebar-footer">
+    <div id="tsharkStatus" class="status-badge">
+      <span class="status-dot"></span> Checking TShark…
+    </div>
+  </div>
+</nav>
+
+<!-- ══ Main ═════════════════════════════════════════════════════════════════ -->
+<div class="main-content">
+  <header class="top-bar">
+    <button class="sidebar-toggle" onclick="toggleSidebar()">☰</button>
+    <div class="top-bar-title">{% block page_title %}PCAP Network Forensics Assistant{% endblock %}</div>
+    <div class="top-bar-right">
+      <span class="badge-version">v1.0</span>
+    </div>
+  </header>
+
+  <div class="page-content">
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<script>
+function toggleSidebar(){
+  document.getElementById('sidebar').classList.toggle('collapsed');
+  document.querySelector('.main-content').classList.toggle('expanded');
+}
+// TShark status
+fetch('/api/status').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('tsharkStatus');
+  if(d.tshark){
+    el.innerHTML = '<span class="status-dot green"></span> TShark available';
+    el.title = d.tshark_version || '';
+  } else {
+    el.innerHTML = '<span class="status-dot yellow"></span> Scapy-only mode';
+  }
+}).catch(()=>{});
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

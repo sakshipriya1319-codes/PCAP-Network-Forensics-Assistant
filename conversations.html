@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% set analysis_id = analysis.id %}
+{% block title %}Conversations – {{ analysis.filename }}{% endblock %}
+{% block page_title %}Network Conversations{% endblock %}
+
+{% block content %}
+<div class="page-wrapper" data-id="{{ analysis.id }}">
+
+  <!-- Filters -->
+  <div class="card filter-card">
+    <h2 class="card-title">🔍 Filter Conversations</h2>
+    <div class="filter-row">
+      <input class="filter-input" id="fSrcIp"   placeholder="Source IP"/>
+      <input class="filter-input" id="fDstIp"   placeholder="Dest IP"/>
+      <input class="filter-input" id="fProto"   placeholder="Protocol"/>
+      <input class="filter-input" id="fDstPort" placeholder="Dst Port"/>
+      <button class="btn btn-primary" onclick="applyFilters()">Apply</button>
+      <button class="btn btn-outline" onclick="resetFilters()">Reset</button>
+    </div>
+  </div>
+
+  <!-- Stats mini-cards -->
+  <div class="mini-cards" id="convStats"></div>
+
+  <!-- Table -->
+  <div class="card">
+    <div class="table-header">
+      <h2 class="card-title">🔗 Conversations</h2>
+      <span id="convCount" class="muted"></span>
+    </div>
+    <div class="table-scroll">
+      <table class="data-table sortable" id="convTable">
+        <thead>
+          <tr>
+            <th onclick="sortTable(0)">Src IP ⇅</th>
+            <th onclick="sortTable(1)">Src Port ⇅</th>
+            <th onclick="sortTable(2)">Dst IP ⇅</th>
+            <th onclick="sortTable(3)">Dst Port ⇅</th>
+            <th onclick="sortTable(4)">Proto ⇅</th>
+            <th onclick="sortTable(5)">Packets ⇅</th>
+            <th onclick="sortTable(6)">Bytes ⇅</th>
+            <th onclick="sortTable(7)">Duration ⇅</th>
+            <th>State</th>
+          </tr>
+        </thead>
+        <tbody id="convBody"></tbody>
+      </table>
+    </div>
+    <div class="pagination" id="pagination"></div>
+  </div>
+</div>
+
+<script>
+const AID = document.querySelector('.page-wrapper').dataset.id;
+let allData = [], currentPage = 1, perPage = 100;
+let sortCol = 5, sortAsc = false;
+
+async function loadConversations(){
+  const params = buildParams();
+  const r = await fetch(`/api/conversations/${AID}?per_page=2000&${params}`);
+  const d = await r.json();
+  allData = d.data || [];
+  document.getElementById('convCount').textContent = `${d.total} conversations`;
+  document.getElementById('convStats').innerHTML = `
+    <div class="mini-card"><span>${d.total}</span><small>Total Flows</small></div>
+  `;
+  renderTable();
+}
+
+function buildParams(){
+  const p = new URLSearchParams();
+  const v = id=>document.getElementById(id).value.trim();
+  if(v('fSrcIp'))   p.set('src_ip',   v('fSrcIp'));
+  if(v('fDstIp'))   p.set('dst_ip',   v('fDstIp'));
+  if(v('fProto'))   p.set('protocol', v('fProto'));
+  if(v('fDstPort')) p.set('dst_port', v('fDstPort'));
+  return p.toString();
+}
+
+function applyFilters(){ currentPage=1; loadConversations(); }
+function resetFilters(){
+  ['fSrcIp','fDstIp','fProto','fDstPort'].forEach(id=>document.getElementById(id).value='');
+  currentPage=1; loadConversations();
+}
+
+function sortTable(col){
+  if(sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sortAsc=false; }
+  renderTable();
+}
+
+function renderTable(){
+  const keys=['src_ip','src_port','dst_ip','dst_port','protocol','packets','bytes','duration'];
+  const sorted = [...allData].sort((a,b)=>{
+    const av=a[keys[sortCol]]??'', bv=b[keys[sortCol]]??'';
+    return (typeof av==='number'&&typeof bv==='number')
+      ? (sortAsc?av-bv:bv-av)
+      : (sortAsc?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av)));
+  });
+  const start=(currentPage-1)*perPage, slice=sorted.slice(start,start+perPage);
+  const stateColor={ESTABLISHED:'green',CLOSED:'muted',RESET:'red',SYN_SENT:'yellow',PARTIAL:'yellow',UNKNOWN:'muted'};
+  document.getElementById('convBody').innerHTML = slice.map(c=>`
+    <tr>
+      <td>${c.src_ip||''}</td><td>${c.src_port||''}</td>
+      <td>${c.dst_ip||''}</td><td>${c.dst_port||''}</td>
+      <td><span class="proto-badge">${c.protocol||''}</span></td>
+      <td>${c.packets||0}</td>
+      <td>${fmtBytes(c.bytes)}</td>
+      <td>${(c.duration||0).toFixed(3)}s</td>
+      <td><span class="state-badge ${stateColor[c.conn_state]||'muted'}">${c.conn_state||'?'}</span></td>
+    </tr>
+  `).join('');
+  renderPagination('pagination', sorted.length, currentPage, perPage, p=>{currentPage=p;renderTable();});
+}
+
+function fmtBytes(b){ if(!b)return'0B'; if(b<1024)return b+'B'; if(b<1048576)return(b/1024).toFixed(1)+'KB'; return(b/1048576).toFixed(1)+'MB'; }
+
+function renderPagination(elId, total, page, per, cb){
+  const pages=Math.ceil(total/per);
+  const el=document.getElementById(elId);
+  if(pages<=1){el.innerHTML='';return;}
+  let html='';
+  if(page>1) html+=`<button onclick="(${cb})(${page-1})">‹</button>`;
+  for(let p=Math.max(1,page-2);p<=Math.min(pages,page+2);p++)
+    html+=`<button class="${p===page?'active':''}" onclick="(${cb})(${p})">${p}</button>`;
+  if(page<pages) html+=`<button onclick="(${cb})(${page+1})">›</button>`;
+  el.innerHTML=html;
+}
+
+loadConversations();
+</script>
+{% endblock %}

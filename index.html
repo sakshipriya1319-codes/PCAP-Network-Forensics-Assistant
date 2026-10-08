@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Upload PCAP – Forensics Assistant{% endblock %}
+{% block page_title %}Upload PCAP File{% endblock %}
+
+{% block content %}
+<div class="upload-wrapper">
+
+  <!-- ── Hero ──────────────────────────────────────────────────────────── -->
+  <div class="hero-card">
+    <div class="hero-icon">🔍</div>
+    <h1 class="hero-title">PCAP Network Forensics Assistant</h1>
+    <p class="hero-subtitle">Analyze · Investigate · Understand Network Traffic</p>
+  </div>
+
+  <!-- ── Upload card ───────────────────────────────────────────────────── -->
+  <div class="card upload-card" id="uploadCard">
+    <h2 class="card-title">Upload Packet Capture</h2>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-icon">📂</div>
+      <p class="drop-text">Drag &amp; drop your <strong>.pcap</strong> or <strong>.pcapng</strong> file here</p>
+      <p class="drop-sub">or</p>
+      <label class="btn btn-primary" for="fileInput">Browse File</label>
+      <input type="file" id="fileInput" accept=".pcap,.pcapng" hidden/>
+      <p class="drop-limit">Max 500 MB</p>
+    </div>
+
+    <div id="uploadProgress" class="upload-progress hidden">
+      <div class="progress-bar-outer"><div class="progress-bar-inner" id="progressBar"></div></div>
+      <p id="progressText" class="progress-text">Uploading…</p>
+    </div>
+
+    <div id="uploadError" class="alert-box error hidden"></div>
+  </div>
+
+  <!-- ── Analysis status ────────────────────────────────────────────────── -->
+  <div class="card status-card hidden" id="statusCard">
+    <h2 class="card-title">🔄 Analysis in Progress</h2>
+    <p id="statusMsg" class="status-msg">Uploading file…</p>
+    <div class="spinner"></div>
+    <p class="status-sub">Large files may take several minutes. Please wait.</p>
+  </div>
+
+  <!-- ── Recent analyses ───────────────────────────────────────────────── -->
+  <div class="card" id="historyCard">
+    <h2 class="card-title">📋 Recent Analyses</h2>
+    <div id="historyList"><p class="muted">Loading…</p></div>
+  </div>
+
+</div>
+
+<script>
+const dropZone   = document.getElementById('dropZone');
+const fileInput  = document.getElementById('fileInput');
+const uploadCard = document.getElementById('uploadCard');
+const statusCard = document.getElementById('statusCard');
+const errorBox   = document.getElementById('uploadError');
+const progressEl = document.getElementById('uploadProgress');
+const progressBar= document.getElementById('progressBar');
+const progressTxt= document.getElementById('progressText');
+const statusMsg  = document.getElementById('statusMsg');
+let pollingTimer = null;
+
+// Drag-and-drop
+['dragover','dragenter'].forEach(e=>dropZone.addEventListener(e,ev=>{ev.preventDefault();dropZone.classList.add('drag-over');}));
+['dragleave','drop'].forEach(e=>dropZone.addEventListener(e,ev=>{ev.preventDefault();dropZone.classList.remove('drag-over');}));
+dropZone.addEventListener('drop', ev=>{
+  const file = ev.dataTransfer.files[0];
+  if(file) startUpload(file);
+});
+fileInput.addEventListener('change', ()=>{
+  if(fileInput.files[0]) startUpload(fileInput.files[0]);
+});
+
+function startUpload(file){
+  const allowed = ['pcap','pcapng'];
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(!allowed.includes(ext)){
+    showError('Invalid file type. Only .pcap and .pcapng are accepted.');
+    return;
+  }
+  if(file.size > 500*1024*1024){
+    showError('File too large (max 500 MB).');
+    return;
+  }
+
+  errorBox.classList.add('hidden');
+  progressEl.classList.remove('hidden');
+  uploadCard.querySelector('.drop-zone').classList.add('hidden');
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST','/upload');
+  xhr.upload.onprogress = ev=>{
+    if(ev.lengthComputable){
+      const pct = Math.round(ev.loaded/ev.total*100);
+      progressBar.style.width = pct+'%';
+      progressTxt.textContent = `Uploading… ${pct}%`;
+    }
+  };
+  xhr.onload = ()=>{
+    if(xhr.status===202){
+      const data = JSON.parse(xhr.responseText);
+      progressTxt.textContent = 'Upload complete. Analysis started…';
+      progressBar.style.width = '100%';
+      setTimeout(()=>{
+        uploadCard.classList.add('hidden');
+        statusCard.classList.remove('hidden');
+        pollStatus(data.analysis_id);
+      }, 600);
+    } else {
+      try { showError(JSON.parse(xhr.responseText).error); }
+      catch(e){ showError('Upload failed ('+xhr.status+').'); }
+      resetUpload();
+    }
+  };
+  xhr.onerror = ()=>{ showError('Network error during upload.'); resetUpload(); };
+  xhr.send(fd);
+}
+
+function pollStatus(id){
+  statusMsg.textContent = 'Running analysis on '+id+'…';
+  pollingTimer = setInterval(async ()=>{
+    try {
+      const r = await fetch('/api/analyses/'+id);
+      const d = await r.json();
+      statusMsg.textContent = 'Status: '+d.status;
+      if(d.status==='complete'){
+        clearInterval(pollingTimer);
+        window.location.href = '/dashboard/'+id;
+      } else if(d.status==='error'){
+        clearInterval(pollingTimer);
+        statusCard.classList.add('hidden');
+        showError('Analysis failed: '+(d.error||'unknown error'));
+        resetUpload();
+      }
+    } catch(e){ /* retry */ }
+  }, 2000);
+}
+
+function resetUpload(){
+  progressEl.classList.add('hidden');
+  progressBar.style.width = '0%';
+  uploadCard.querySelector('.drop-zone').classList.remove('hidden');
+  fileInput.value = '';
+}
+
+function showError(msg){
+  errorBox.textContent = '⚠ '+msg;
+  errorBox.classList.remove('hidden');
+}
+
+// Load history
+async function loadHistory(){
+  try {
+    const r = await fetch('/api/analyses');
+    const list = await r.json();
+    const el = document.getElementById('historyList');
+    if(!list.length){ el.innerHTML='<p class="muted">No analyses yet.</p>'; return; }
+    el.innerHTML = list.map(a=>`
+      <div class="history-item">
+        <div class="history-info">
+          <span class="history-name">${a.filename}</span>
+          <span class="history-meta">${formatSize(a.file_size)} &nbsp;·&nbsp; ${formatDate(a.upload_time)}</span>
+        </div>
+        <div class="history-actions">
+          <span class="badge badge-${a.status}">${a.status}</span>
+          ${a.status==='complete'?`<a href="/dashboard/${a.id}" class="btn btn-sm btn-primary">View</a>`:''}
+        </div>
+      </div>
+    `).join('');
+  } catch(e){}
+}
+
+function formatSize(b){ if(!b)return'?'; if(b<1024)return b+'B'; if(b<1048576)return(b/1024).toFixed(1)+'KB'; return(b/1048576).toFixed(1)+'MB'; }
+function formatDate(ts){ if(!ts)return'?'; const d=new Date(ts*1000); return d.toLocaleString(); }
+
+loadHistory();
+</script>
+{% endblock %}
